@@ -98,12 +98,9 @@ function onIceStateChange(event) {
     console.log('ICE state change event: ', event);
 }
 
-
-async function call() {
-    callButton.disabled = true;
-    hangupButton.disabled = false;
-    console.log('Starting call');
+function openLocalTracks() {
     startTime = window.performance.now();
+
     const videoTracks = localStream.getVideoTracks();
     const audioTracks = localStream.getAudioTracks();
 
@@ -115,7 +112,14 @@ async function call() {
     }
 
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+}
 
+async function call() {
+    callButton.disabled = true;
+    hangupButton.disabled = false;
+    console.log('Starting call');
+
+    openLocalTracks();
 
     const userToCall = prompt("call to: ")
     if (userToCall !== "no") {
@@ -126,8 +130,6 @@ async function call() {
 }
 
 // -------------------
-
-
 let users // map sid: username
 
 function getSIDbyUsername(value) {
@@ -175,8 +177,7 @@ sio.on('call_offered', async data => {
 sio.on('call_accepted', async data => {
     console.log("call_accepted")
     console.log(data)
-    peerConnectedUserSID = data.from
-    await callAccepted(data.answer)
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
 })
 
 sio.on('add_ice_candidate', async data => {
@@ -190,10 +191,13 @@ sio.on('disconnect', () => {
 });
 
 async function offerCall(username) {
+    const remoteUserSID = getSIDbyUsername(username)
+    peerConnectedUserSID = remoteUserSID
+
     const offer = await createOffer()
     sio.emit("offer_call", {
         offer,
-        to: getSIDbyUsername(username)
+        to: remoteUserSID
     });
 }
 
@@ -201,10 +205,7 @@ async function offerCall(username) {
 async function acceptCall(offer, from) {
     const answer = await createAnswer(offer)
     sio.emit("accept_call", {answer, with: from})
-}
-
-async function callAccepted(answer, from) {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+    openLocalTracks();
 }
 
 

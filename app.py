@@ -68,10 +68,3 @@ async def accept_call(sid, data):
 async def ice_candidate(sid, data):
     print("ice candidate")
     await sio.emit("add_ice_candidate", {"candidate": data["candidate"]}, to=data["to"])
-
-
-@sio.event
-async def sum(sid, data):
-    print(connected_users)
-    result = data["numbers"][0] + data["numbers"][1]
-    await sio.emit("sum_result", {"result": result}, to=sid)
