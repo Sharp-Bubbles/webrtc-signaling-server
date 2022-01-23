@@ -159,7 +159,7 @@ video {
 }
 
 #showChat {
-  display: none;
+  display: flex;
 }
 
 .header__back {
