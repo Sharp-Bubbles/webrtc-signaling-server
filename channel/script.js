@@ -1,16 +1,9 @@
-const peerConnection = new RTCPeerConnection({});
-
 const videoGrid = document.getElementById("video-grid");
 
 (() => {
-    const showChat = document.querySelector("#showChat");
     document.querySelector(".main__left").style.display = "flex";
     document.querySelector(".main__left").style.flex = "1";
     document.querySelector(".main__right").style.display = "none";
-
-    html = `<i class="fas fa-comment-slash"></i>`;
-    showChat.className = "options__button background__red";
-    showChat.innerHTML = html;
 })();
 
 
@@ -94,7 +87,6 @@ signaling.onmessage = e => {
 };
 
 const start = async () => {
-    console.log("start")
     localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
     const localVideo = document.createElement("video");
     addVideoStream(localVideo, localStream)
@@ -104,12 +96,9 @@ const start = async () => {
 
 const addVideoStream = (video, stream) => {
     if (streams.has(stream.id)) {
-        console.log("skip stream")
-        console.log(stream)
         return
     }
     streams.add(stream.id)
-    console.log(streams)
     video.srcObject = stream;
     video.addEventListener("loadedmetadata", () => {
         video.play();
@@ -200,6 +189,6 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-sleep(1000).then(
+sleep(300).then(
     async () => await start()
 )

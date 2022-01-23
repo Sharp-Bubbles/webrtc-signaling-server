@@ -1,7 +1,7 @@
 import socketio
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
-app = socketio.ASGIApp(sio, static_files={"/": "./public/"})
+app = socketio.ASGIApp(sio, static_files={"/": "./public/", "/channel/": "./channel/"})
 
 connected_users = {}  # mapping Dict[sid, username]
 
@@ -22,7 +22,6 @@ async def connect(sid, environ):
 async def add_user(sid, data):
     username = data["username"]
     connected_users[sid] = username
-    # todo: broadcast
     await sio.emit(
         "user_added",
         {
@@ -32,6 +31,7 @@ async def add_user(sid, data):
             "username": username,
             "sid": sid,
         },
+        to=sid,
     )
     print(connected_users)
 
@@ -67,4 +67,5 @@ async def accept_call(sid, data):
 @sio.event
 async def ice_candidate(sid, data):
     print("ice candidate")
+    print(data)
     await sio.emit("add_ice_candidate", {"candidate": data["candidate"]}, to=data["to"])

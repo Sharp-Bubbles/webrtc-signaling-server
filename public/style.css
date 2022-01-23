@@ -186,7 +186,7 @@ video {
   }
 
   #showChat {
-    display: flex;
+    display: none;
   }
 }
 

@@ -1,16 +1,9 @@
-const peerConnection = new RTCPeerConnection({});
-
 const videoGrid = document.getElementById("video-grid");
 
 (() => {
-    const showChat = document.querySelector("#showChat");
     document.querySelector(".main__left").style.display = "flex";
     document.querySelector(".main__left").style.flex = "1";
     document.querySelector(".main__right").style.display = "none";
-
-    html = `<i class="fas fa-comment-slash"></i>`;
-    showChat.className = "options__button background__red";
-    showChat.innerHTML = html;
 })();
 
 
@@ -57,59 +50,88 @@ inviteButton.addEventListener("click", (e) => {
 let pc;
 let localStream;
 const streams = new Set()
-const signaling = new BroadcastChannel('webrtc');
+let users // map sid: username
 
-signaling.onmessage = e => {
-    if (!localStream) {
-        console.log('not ready yet');
-        return;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getSIDbyUsername(value) {
+    for (let [k, v] of users.entries()) {
+        if (v === value)
+            return k;
     }
-    switch (e.data.type) {
-        case 'offer':
-            handleOffer(e.data);
-            break;
-        case 'answer':
-            handleAnswer(e.data);
-            break;
-        case 'candidate':
-            handleCandidate(e.data);
-            break;
-        case 'ready':
-            // A second tab joined. This tab will initiate a call unless in a call already.
-            if (pc) {
-                console.log('already in call, ignoring');
-                return;
-            }
-            makeCall();
-            break;
-        case 'bye':
-            if (pc) {
-                hangup();
-            }
-            break;
-        default:
-            console.log('unhandled', e);
-            break;
+}
+
+const sio = io();
+
+const currentUser = prompt("Please enter your name");
+
+if (!currentUser) {
+    throw "User can't be empty"
+}
+sio.on('connect', async () => {
+    console.log('connected');
+    sio.emit("add_user", {username: currentUser})
+});
+
+sio.on('user_added', async data => {
+    console.log("user added " + data.username)
+    users = new Map()
+    data.users.map(user => users.set(user.sid, user.username))
+
+    if (users.size === 1) {
+        console.log("first user is ready")
+        await start()
+    } else if (users.size === 2) {
+        console.log("second user is ready")
+        console.log("Setup RTCPeerConnection connection. Calling first user ...")
+        await start()
+        await makeCall();
+    } else {
+        throw "Only one to one call supported for now"
     }
-};
+
+})
+
+sio.on('user_disconnected', data => {
+    console.log("user disconnected " + data.username)
+    users = new Map()
+    data.users.map(user => users.set(user.sid, user.username))
+    console.log(users)
+})
+
+sio.on('disconnect', () => {
+    console.log('disconnected');
+});
+
+sio.on("call_offered", data => {
+    const {offer, from} = data
+    handleOffer(offer, from)
+})
+
+sio.on("call_accepted", data => {
+    const {answer, from} = data
+    handleAnswer(answer)
+})
+
+sio.on("add_ice_candidate", data => {
+    const {candidate} = data
+    handleCandidate(candidate)
+})
 
 const start = async () => {
-    console.log("start")
     localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
     const localVideo = document.createElement("video");
     addVideoStream(localVideo, localStream)
-
-    signaling.postMessage({type: 'ready'});
 };
 
 const addVideoStream = (video, stream) => {
     if (streams.has(stream.id)) {
-        console.log("skip stream")
-        console.log(stream)
         return
     }
     streams.add(stream.id)
-    console.log(streams)
     video.srcObject = stream;
     video.addEventListener("loadedmetadata", () => {
         video.play();
@@ -120,7 +142,7 @@ const addVideoStream = (video, stream) => {
 
 const stop = async () => {
     hangup();
-    signaling.postMessage({type: 'bye'});
+    // signaling.postMessage({type: 'bye'});
 };
 
 async function hangup() {
@@ -132,19 +154,10 @@ async function hangup() {
     localStream = null;
 }
 
-function createPeerConnection() {
+function createPeerConnection(remoteUserSID) {
     pc = new RTCPeerConnection();
     pc.onicecandidate = e => {
-        const message = {
-            type: 'candidate',
-            candidate: null,
-        };
-        if (e.candidate) {
-            message.candidate = e.candidate.candidate;
-            message.sdpMid = e.candidate.sdpMid;
-            message.sdpMLineIndex = e.candidate.sdpMLineIndex;
-        }
-        signaling.postMessage(message);
+        sio.emit("ice_candidate", {candidate: e.candidate, to: remoteUserSID})
     };
     pc.ontrack = e => {
         const remoteVideo = document.createElement("video");
@@ -155,23 +168,30 @@ function createPeerConnection() {
 }
 
 async function makeCall() {
-    await createPeerConnection();
+    const [firstUser, secondUser] = users.values();
 
+    const userToCall = (currentUser === firstUser) ? secondUser : firstUser;
+    console.log(`${currentUser} is calling ${secondUser}`)
+
+    const remoteUserSID = getSIDbyUsername(userToCall)
+    await createPeerConnection(remoteUserSID);
     const offer = await pc.createOffer();
-    signaling.postMessage({type: 'offer', sdp: offer.sdp});
+
+    sio.emit("offer_call", {offer, to: remoteUserSID})
     await pc.setLocalDescription(offer);
 }
 
-async function handleOffer(offer) {
+async function handleOffer(offer, from) {
     if (pc) {
         console.error('existing peerconnection');
         return;
     }
-    await createPeerConnection();
+    await createPeerConnection(from);
     await pc.setRemoteDescription(offer);
 
     const answer = await pc.createAnswer();
-    signaling.postMessage({type: 'answer', sdp: answer.sdp});
+
+    sio.emit("accept_call", {answer: answer, with: from})
     await pc.setLocalDescription(answer);
 }
 
@@ -188,18 +208,5 @@ async function handleCandidate(candidate) {
         console.error('no peerconnection');
         return;
     }
-    if (!candidate.candidate) {
-        await pc.addIceCandidate(null);
-    } else {
-        await pc.addIceCandidate(candidate);
-    }
+    await pc.addIceCandidate(candidate);
 }
-
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-sleep(1000).then(
-    async () => await start()
-)
