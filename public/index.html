@@ -1,63 +1,62 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>Socket.IO Demo</title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>videoChatApp</title>
+    <link rel="stylesheet" href="style.css"/>
+    <script src="https://kit.fontawesome.com/c939d0e917.js"></script>
 
-    <meta charset="utf-8">
-    <meta name="description" content="WebRTC code samples">
-    <meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1">
-    <meta itemprop="description" content="Client-side WebRTC code samples">
-    <meta itemprop="image" content="../../../images/webrtc-icon-192x192.png">
-    <meta itemprop="name" content="WebRTC code samples">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta id="theme-color" name="theme-color" content="#ffffff">
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.4/socket.io.min.js"></script>
 
-    <base target="_blank">
-
-    <title>Peer connection</title>
-
-    <!--    <link rel="icon" sizes="192x192" href="../../../images/webrtc-icon-192x192.png">-->
-    <link href="//fonts.googleapis.com/css?family=Roboto:300,400,500,700" rel="stylesheet" type="text/css">
-    <link rel="stylesheet" href="/main.css"/>
 </head>
 <body>
-<h1>Socket.IO Demo</h1>
-<div id="container">
-    <h1><a href="//webrtc.github.io/samples/" title="WebRTC samples homepage">WebRTC samples</a>
-        <span>Peer connection</span></h1>
-
-    <p>This sample shows how to setup a connection between two peers using
-        <a href="https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection">RTCPeerConnection</a>.
-    </p>
-
-    <video id="localVideo" playsinline autoplay muted></video>
-    <video id="remoteVideo" playsinline autoplay></video>
-
-    <div class="box">
-        <button id="startButton">Start</button>
-        <button id="callButton">Call</button>
-        <button id="hangupButton">Hang Up</button>
+<div class="header">
+    <div class="logo">
+        <h2 class="header__title">Video Chat</h2>
     </div>
-
-    <p>View the console to see logging. The <code>MediaStream</code> object <code>localStream</code>, and the <code>RTCPeerConnection</code>
-        objects <code>pc1</code> and <code>pc2</code> are in global scope, so you can inspect them in the console as
-        well.</p>
-
-    <p>For more information about RTCPeerConnection, see <a href="http://www.html5rocks.com/en/tutorials/webrtc/basics/"
-                                                            title="HTML5 Rocks article about WebRTC by Sam Dutton">Getting
-        Started With WebRTC</a>.</p>
-
-
-    <a href="https://github.com/webrtc/samples/tree/gh-pages/src/content/peerconnection/pc1"
-       title="View source for this page on GitHub" id="viewSource">View source on GitHub</a>
-
 </div>
+<div class="main">
+    <div class="main__left">
+        <div class="videos__group">
+            <div id="video-grid">
 
-<script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.4/socket.io.min.js"></script>
-<script src="/index.js"></script>
+            </div>
+        </div>
+        <div class="options">
+            <div class="options__left">
+                <div id="stopVideo" class="options__button">
+                    <i class="fa fa-video-camera"></i>
+                </div>
+                <div id="muteButton" class="options__button">
+                    <i class="fa fa-microphone"></i>
+                </div>
+                <div id="showChat" class="options__button">
+                    <i class="fa fa-comment"></i>
+                </div>
+            </div>
+            <div class="options__right">
+                <div id="inviteButton" class="options__button">
+                    <i class="fas fa-user-plus"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="main__right">
+        <div class="main__chat_window">
+            <div class="messages">
 
-<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/web-socket-js/1.0.0/web_socket.js"></script>-->
-<!--<script src="../../../js/lib/ga.js"></script>-->
+            </div>
+        </div>
+        <div class="main__message_container">
+            <input id="chat_message" type="text" autocomplete="off" placeholder="Type message here...">
+            <div id="send" class="options__button">
+                <i class="fa fa-plus" aria-hidden="true"></i>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
+<script src="./script.js"></script>
 </html>
