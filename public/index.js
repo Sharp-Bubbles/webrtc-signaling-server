@@ -1,5 +1,133 @@
 'use strict';
 
+const startButton = document.getElementById('startButton');
+const callButton = document.getElementById('callButton');
+const hangupButton = document.getElementById('hangupButton');
+callButton.disabled = true;
+hangupButton.disabled = true;
+
+const peerConnection = new RTCPeerConnection({});
+
+let peerConnectedUserSID;
+
+let localStream;
+const offerOptions = {
+    offerToReceiveAudio: 1,
+    offerToReceiveVideo: 1
+};
+
+startButton.addEventListener('click', start);
+callButton.addEventListener('click', call);
+hangupButton.addEventListener('click', hangup);
+
+peerConnection.addEventListener('icecandidate', e => onIceCandidate(e));
+peerConnection.addEventListener('iceconnectionstatechange', e => onIceStateChange(e));
+peerConnection.addEventListener('track', gotRemoteStream);
+
+function hangup() {
+    console.log('Ending call');
+    peerConnection.close();
+    // peerConnection = null;
+    hangupButton.disabled = true;
+    callButton.disabled = false;
+}
+
+
+let startTime;
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+
+localVideo.addEventListener('loadedmetadata', function () {
+    console.log(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+remoteVideo.addEventListener('loadedmetadata', function () {
+    console.log(`Remote video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+remoteVideo.addEventListener('resize', () => {
+    console.log(`Remote video size changed to ${remoteVideo.videoWidth}x${remoteVideo.videoHeight} - Time since pageload ${performance.now().toFixed(0)}ms`);
+    // We'll use the first onsize callback as an indication that video has started
+    // playing out.
+    if (startTime) {
+        const elapsedTime = window.performance.now() - startTime;
+        console.log('Setup time: ' + elapsedTime.toFixed(3) + 'ms');
+        startTime = null;
+    }
+});
+
+async function start() {
+    console.log('Requesting local stream');
+    startButton.disabled = true;
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+        console.log('Received local stream');
+        localVideo.srcObject = stream;
+        localStream = stream;
+        callButton.disabled = false;
+    } catch (e) {
+        alert(`getUserMedia() error: ${e.name}`);
+        throw e
+    }
+}
+
+
+function gotRemoteStream(e) {
+    console.log(e)
+    console.log(remoteVideo)
+    if (remoteVideo.srcObject !== e.streams[0]) {
+        remoteVideo.srcObject = e.streams[0];
+        console.log('received remote stream');
+    }
+}
+
+async function onIceCandidate(event, user) {
+    try {
+        if (event.candidate) {
+            console.log("send ice candidate to " + peerConnectedUserSID)
+            sio.emit("ice_candidate", {candidate: event.candidate, to: peerConnectedUserSID})
+        }
+    } catch (e) {
+        console.log(`failed to add ICE Candidate: ${e.toString()}`);
+    }
+    console.log(`ICE candidate:\n${event.candidate ? event.candidate.candidate : '(null)'}`);
+}
+
+function onIceStateChange(event) {
+    console.log(`ICE state: ${peerConnection.iceConnectionState}`);
+    console.log('ICE state change event: ', event);
+}
+
+
+async function call() {
+    callButton.disabled = true;
+    hangupButton.disabled = false;
+    console.log('Starting call');
+    startTime = window.performance.now();
+    const videoTracks = localStream.getVideoTracks();
+    const audioTracks = localStream.getAudioTracks();
+
+    if (videoTracks.length > 0) {
+        console.log(`Using video device: ${videoTracks[0].label}`);
+    }
+    if (audioTracks.length > 0) {
+        console.log(`Using audio device: ${audioTracks[0].label}`);
+    }
+
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+
+    const userToCall = prompt("call to: ")
+    if (userToCall !== "no") {
+        console.log('Added local stream');
+
+        offerCall(userToCall).then(() => console.log("call offer sent"))
+    }
+}
+
+// -------------------
+
+
 let users // map sid: username
 
 function getSIDbyUsername(value) {
@@ -9,8 +137,6 @@ function getSIDbyUsername(value) {
     }
 }
 
-const peerConnection = new RTCPeerConnection({})
-
 const sio = io();
 
 const currentUser = prompt("Please enter your name");
@@ -18,18 +144,6 @@ const currentUser = prompt("Please enter your name");
 if (!currentUser) {
     throw "User can't be empty"
 }
-
-// async function onIceCandidate(event) {
-//     console.log(event)
-//     try {
-//         await peerConnection.addIceCandidate(event.candidate);
-//     } catch (e) {
-//         console.error('Failed to add ICE candidate')
-//     }
-//     console.log(`ICE candidate:\n${event.candidate ? event.candidate.candidate : '(null)'}`);
-// }
-
-// peerConnection.addEventListener('icecandidate', e => onIceCandidate(pc2, e));
 
 sio.on('connect', async () => {
     console.log('connected');
@@ -54,13 +168,21 @@ sio.on('user_disconnected', data => {
 sio.on('call_offered', async data => {
     console.log("call_offered")
     console.log(data)
+    peerConnectedUserSID = data.from
     await acceptCall(data.offer, data.from)
 })
 
 sio.on('call_accepted', async data => {
     console.log("call_accepted")
     console.log(data)
+    peerConnectedUserSID = data.from
     await callAccepted(data.answer)
+})
+
+sio.on('add_ice_candidate', async data => {
+    console.log("try to add ice candidate")
+    console.log(data.candidate)
+    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
 })
 
 sio.on('disconnect', () => {
@@ -87,33 +209,14 @@ async function callAccepted(answer, from) {
 
 
 async function createOffer() {
-    let offer = await peerConnection.createOffer({OfferToReceiveAudio: true, OfferToReceiveVideo: true})
+    let offer = await peerConnection.createOffer(offerOptions)
     await peerConnection.setLocalDescription(new RTCSessionDescription(offer))
     return offer
 }
 
 async function createAnswer(offer) {
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-    let answer = await peerConnection.createAnswer({OfferToReceiveAudio: true, OfferToReceiveVideo: true})
+    let answer = await peerConnection.createAnswer(offerOptions)
     await peerConnection.setLocalDescription(new RTCSessionDescription(answer))
     return answer
 }
-
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-sleep(1000).then(
-    () => {
-        const userToCall = prompt("call to: ")
-        if (userToCall !== "no") {
-            console.log("call")
-            offerCall(userToCall).then(
-                () => {
-                    console.log("call offer sent")
-                }
-            )
-        }
-    }
-)

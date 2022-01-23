@@ -50,39 +50,24 @@ async def disconnect(sid):
             ],
         },
     )
-    print(connected_users)
 
 
 @sio.event
 async def offer_call(sid, data):
     print("call is offered")
-    print(sid)
-    print(data)
     await sio.emit("call_offered", {"offer": data["offer"], "from": sid}, to=data["to"])
 
 
 @sio.event
 async def accept_call(sid, data):
     print("call is offered")
-    print(connected_users)
-    print(sid)
-    print(data)
     await sio.emit("call_accepted", {"answer": data["answer"], "from": sid}, to=data["with"])
 
 
-# async function onIceCandidate(pc, event) {
-#     try {
-#         await (getOtherPc(pc).addIceCandidate(event.candidate));
-#         onAddIceCandidateSuccess(pc);
-#     } catch (e) {
-#         onAddIceCandidateError(pc, e);
-#     }
-#     console.log(`${getName(pc)} ICE candidate:\n${event.candidate ? event.candidate.candidate : '(null)'}`);
-# }
-
 @sio.event
-async def icecandidate(sid, data):
-    pass
+async def ice_candidate(sid, data):
+    print("ice candidate")
+    await sio.emit("add_ice_candidate", {"candidate": data["candidate"]}, to=data["to"])
 
 
 @sio.event
