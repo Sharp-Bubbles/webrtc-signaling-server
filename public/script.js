@@ -1,15 +1,17 @@
-const videoGrid = document.getElementById("video-grid");
-
 (() => {
     document.querySelector(".main__left").style.display = "flex";
     document.querySelector(".main__left").style.flex = "1";
     document.querySelector(".main__right").style.display = "none";
 })();
 
-
+const videoGrid = document.getElementById("video-grid");
+const createRoomButton = document.querySelector("#createRoomButton");
+const leaveRoomButton = document.querySelector("#leaveRoomButton");
 const inviteButton = document.querySelector("#inviteButton");
 const muteButton = document.querySelector("#muteButton");
 const stopVideo = document.querySelector("#stopVideo");
+const videoLoader = document.querySelector(".loader")
+
 muteButton.addEventListener("click", () => {
     const enabled = localStream.getAudioTracks()[0].enabled;
     if (enabled) {
@@ -24,6 +26,25 @@ muteButton.addEventListener("click", () => {
         muteButton.innerHTML = html;
     }
 });
+
+function setInRoom() {
+    muteButton.style.display = "flex"
+    stopVideo.style.display = "flex"
+    leaveRoomButton.style.display = "flex"
+    inviteButton.style.display = "flex"
+
+    createRoomButton.style.display = "none"
+}
+
+function setWithoutRoom() {
+    muteButton.style.display = "none"
+    stopVideo.style.display = "none"
+    leaveRoomButton.style.display = "none"
+    inviteButton.style.display = "none"
+
+    createRoomButton.style.display = "flex"
+}
+
 
 stopVideo.addEventListener("click", () => {
     const enabled = localStream.getVideoTracks()[0].enabled;
@@ -47,6 +68,26 @@ inviteButton.addEventListener("click", (e) => {
     );
 });
 
+let enteredRoom;
+
+async function createRoom() {
+    setInRoom()
+    emitCreateRoom()
+    await openLocalTrack()
+}
+
+createRoomButton.addEventListener("click", async () => await createRoom())
+
+async function leaveRoom() {
+    setWithoutRoom()
+    await closeConnectionsAndLocalStream()
+    emitLeaveRoom()
+}
+
+leaveRoomButton.addEventListener("click", async () => await leaveRoom())
+
+setWithoutRoom()
+
 
 const peerConnections = new Map() // map sid: RTCPeerConnection
 
@@ -55,10 +96,6 @@ let localStream;
 const streams = new Set()
 let users // map sid: username
 
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function getSIDbyUsername(value) {
     for (let [k, v] of users.entries()) {
@@ -69,6 +106,21 @@ function getSIDbyUsername(value) {
 
 const sio = io();
 
+
+function emitCreateRoom() {
+    sio.emit("create_private_room")
+}
+
+function emitLeaveRoom() {
+    sio.emit("leave_private_room", {room: enteredRoom})
+    enteredRoom = null
+}
+
+sio.on('private_room_created', data => {
+    const {room_name, invite_link} = data
+    enteredRoom = room_name
+})
+
 const currentUser = prompt("Please enter your name");
 
 if (!currentUser) {
@@ -76,7 +128,7 @@ if (!currentUser) {
 }
 sio.on('connect', async () => {
     // handle local user media
-    await start()
+    // await start()
     sio.emit("join_global_room", {username: currentUser})
 });
 
@@ -135,10 +187,25 @@ sio.on("add_ice_candidate", data => {
     handleCandidate(candidate, from)
 })
 
-const start = async () => {
-    localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+sio.on("disconnected_from_private_room", async () => {
+    alert("You has been disconnected from private room because admin has left")
+    await leaveRoom()
+})
+
+sio.on("disconnected_from_private_room_admin", async () => {
+    alert("You has been disconnected from private room by admin")
+    await leaveRoom()
+})
+
+const openLocalTrack = async () => {
+    videoLoader.style.display = "flex"
+
     const localVideo = document.createElement("video");
+    localVideo.setAttribute("id", 'localVideo')
+    localStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
     addVideoStream(localVideo, localStream)
+
+    videoLoader.style.display = "none"
 };
 
 const addVideoStream = (video, stream) => {
@@ -154,14 +221,15 @@ const addVideoStream = (video, stream) => {
 };
 
 
-const stop = async () => {
-    hangup();
-};
-
-async function hangup() {
-    // todo: close all peer connections
+function closeLocalStream() {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
+}
+
+async function closeConnectionsAndLocalStream() {
+    closeAllPeerConnections();
+    closeLocalStream()
+    document.querySelector('#localVideo').remove()
 }
 
 function createPeerConnection(remoteUserSID) {
