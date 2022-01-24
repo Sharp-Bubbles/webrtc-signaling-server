@@ -47,7 +47,9 @@ inviteButton.addEventListener("click", (e) => {
     );
 });
 
-let pc;
+
+const peerConnections = new Map() // map sid: RTCPeerConnection
+
 let localStream;
 const streams = new Set()
 let users // map sid: username
@@ -72,38 +74,47 @@ if (!currentUser) {
     throw "User can't be empty"
 }
 sio.on('connect', async () => {
-    console.log('connected');
-    sio.emit("add_user", {username: currentUser})
+    // handle local user media
+    await start()
+    sio.emit("join_global_room", {username: currentUser})
 });
 
-sio.on('user_added', async data => {
-    console.log("user added " + data.username)
+sio.on('user_joined_global_room', async data => {
+    console.log("user connected to a global room " + data.username)
     users = new Map()
     data.users.map(user => users.set(user.sid, user.username))
 
+
     if (users.size === 1) {
         console.log("first user is ready")
-        await start()
-    } else if (users.size === 2) {
-        console.log("second user is ready")
-        console.log("Setup RTCPeerConnection connection. Calling first user ...")
-        await start()
-        await makeCall();
     } else {
-        throw "Only one to one call supported for now"
+        if (currentUser === data.username) {
+            console.log(`${currentUser} has joined the room. Calling other users in global room`)
+            await callAllUsers()
+        }
     }
-
 })
 
-sio.on('user_disconnected', data => {
+sio.on('user_left_global_room', data => {
+    const {sid, username} = data
     console.log("user disconnected " + data.username)
     users = new Map()
     data.users.map(user => users.set(user.sid, user.username))
     console.log(users)
+
+    if (username !== currentUser) {
+        peerConnections.get(sid).close()
+        peerConnections.delete(sid)
+    } else {
+        throw "user_left_global_room event shouldn't be triggered for user who has left the room"
+    }
 })
 
 sio.on('disconnect', () => {
     console.log('disconnected');
+    // maybe conn should close only from one side
+    closeAllPeerConnections()
+    sio.emit("left_global_room")
 });
 
 sio.on("call_offered", data => {
@@ -113,12 +124,12 @@ sio.on("call_offered", data => {
 
 sio.on("call_accepted", data => {
     const {answer, from} = data
-    handleAnswer(answer)
+    handleAnswer(answer, from)
 })
 
 sio.on("add_ice_candidate", data => {
-    const {candidate} = data
-    handleCandidate(candidate)
+    const {candidate, from} = data
+    handleCandidate(candidate, from)
 })
 
 const start = async () => {
@@ -142,71 +153,86 @@ const addVideoStream = (video, stream) => {
 
 const stop = async () => {
     hangup();
-    // signaling.postMessage({type: 'bye'});
 };
 
 async function hangup() {
-    if (pc) {
-        pc.close();
-        pc = null;
-    }
+    // todo: close all peer connections
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
 }
 
 function createPeerConnection(remoteUserSID) {
-    pc = new RTCPeerConnection();
-    pc.onicecandidate = e => {
+    const peerConn = new RTCPeerConnection();
+    peerConn.onicecandidate = e => {
         sio.emit("ice_candidate", {candidate: e.candidate, to: remoteUserSID})
     };
-    pc.ontrack = e => {
+    peerConn.ontrack = e => {
         const remoteVideo = document.createElement("video");
         addVideoStream(remoteVideo, e.streams[0])
+        // todo: remote video element as well
 
     }
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    localStream.getTracks().forEach(track => peerConn.addTrack(track, localStream));
+    peerConnections.set(remoteUserSID, peerConn)
+    return peerConn
 }
 
-async function makeCall() {
-    const [firstUser, secondUser] = users.values();
+function closeAllPeerConnections() {
+    for (let [remoteUserSID, conn] of peerConnections) {
+        conn.close()
+        console.log("Close connection with " + remoteUserSID);
+    }
+}
 
-    const userToCall = (currentUser === firstUser) ? secondUser : firstUser;
-    console.log(`${currentUser} is calling ${secondUser}`)
+async function callAllUsers() {
+    [...users.values()]
+        .filter(username => username !== currentUser)
+        .map(async username => await makeCall(username))
+}
 
-    const remoteUserSID = getSIDbyUsername(userToCall)
-    await createPeerConnection(remoteUserSID);
-    const offer = await pc.createOffer();
-
+async function createOffer(peerConn, remoteUserSID) {
+    const offer = await peerConn.createOffer();
     sio.emit("offer_call", {offer, to: remoteUserSID})
-    await pc.setLocalDescription(offer);
+    await peerConn.setLocalDescription(offer);
+}
+
+
+async function makeCall(remoteUsername) {
+    const remoteUserSID = getSIDbyUsername(remoteUsername)
+    const peerConn = await createPeerConnection(remoteUserSID);
+    await createOffer(peerConn, remoteUserSID)
+    return peerConn
 }
 
 async function handleOffer(offer, from) {
-    if (pc) {
-        console.error('existing peerconnection');
-        return;
-    }
-    await createPeerConnection(from);
-    await pc.setRemoteDescription(offer);
+    const peerConn = await createPeerConnection(from);
+    await peerConn.setRemoteDescription(offer);
 
-    const answer = await pc.createAnswer();
+    const answer = await peerConn.createAnswer();
 
     sio.emit("accept_call", {answer: answer, with: from})
-    await pc.setLocalDescription(answer);
+    await peerConn.setLocalDescription(answer);
+
 }
 
-async function handleAnswer(answer) {
-    if (!pc) {
-        console.error('no peerconnection');
-        return;
+async function handleAnswer(answer, from) {
+    const conn = peerConnections.get(from)
+    if (!conn) {
+        console.log(peerConnections)
+        console.log(users)
+        throw "Trying to create answer for unknown user"
     }
-    await pc.setRemoteDescription(answer);
+
+    await conn.setRemoteDescription(answer)
 }
 
-async function handleCandidate(candidate) {
-    if (!pc) {
-        console.error('no peerconnection');
-        return;
+async function handleCandidate(candidate, from) {
+    const conn = peerConnections.get(from)
+    if (!conn) {
+        console.log(peerConnections)
+        console.log(users)
+        throw "Trying to add ice candidate from unknown user"
     }
-    await pc.addIceCandidate(candidate);
+
+    await conn.addIceCandidate(candidate);
 }
