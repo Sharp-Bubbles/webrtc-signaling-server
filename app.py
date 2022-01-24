@@ -22,6 +22,16 @@ async def join_global_room(sid, data):
 
 
 @sio.event
+async def get_users(sid):
+    await sio.emit(
+        "users_returned",
+        {"users": [
+            {"sid": sid, "username": username} for sid, username in connected_users.items()
+        ]}, to=sid
+    )
+
+
+@sio.event
 async def create_private_room(sid):
     username = connected_users[sid]
 
@@ -39,12 +49,15 @@ async def create_private_room(sid):
 @sio.event
 async def join_private_room(sid, data):
     room_name = data["room"]
-    username = data["username"]
+    if not rooms.has(room_name):
+        await sio.emit("join_private_room_failed", {"error": "Room you are trying to connect doesn't exist"}, to=sid)
+    else:
+        participants_sids = rooms.get(room_name).get_all_users()
+        rooms.add_user_to_room(room_name, sid)
+        sio.enter_room(sid, room_name)
 
-    rooms.add_user_to_room(room_name, sid)
-    sio.enter_room(sid, room_name)
-
-    await sio.emit("user_joined_private_room", {"username": username}, room=room_name, skip_sid=sid)
+        await sio.emit("user_joined_private_room", {}, room=room_name, skip_sid=sid)
+        await sio.emit("you_joined_private_room", {"participants_sids": participants_sids, "room": room_name}, to=sid)
 
 
 async def left_room(room_name, sid):
@@ -86,11 +99,14 @@ async def disconnect(sid):
     print("disconnect called")
     print(sio.rooms(sid))
     for room in sio.rooms(sid):
-        # todo: why more roooms with (user sid) also here
+        # todo: why more rooms with (user sid) also here
         if room in rooms.rooms.keys():
             await left_room(room, sid)
 
-    username = connected_users.pop(sid)
+    username = connected_users.get(sid)
+    if username:
+        connected_users.pop(sid)
+
     await sio.emit("user_left_global_room", {"sid": sid, "username": username, "users": [
         {"sid": sid, "username": username} for sid, username in connected_users.items()
     ]}, skip_sid=sid)

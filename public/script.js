@@ -7,6 +7,7 @@
 const videoGrid = document.getElementById("video-grid");
 const createRoomButton = document.querySelector("#createRoomButton");
 const leaveRoomButton = document.querySelector("#leaveRoomButton");
+const joinOtherRoomButton = document.querySelector("#joinOtherRoom");
 const inviteButton = document.querySelector("#inviteButton");
 const muteButton = document.querySelector("#muteButton");
 const stopVideo = document.querySelector("#stopVideo");
@@ -33,6 +34,7 @@ function setInRoom() {
     leaveRoomButton.style.display = "flex"
     inviteButton.style.display = "flex"
 
+    joinOtherRoomButton.style.display = "none"
     createRoomButton.style.display = "none"
 }
 
@@ -43,6 +45,7 @@ function setWithoutRoom() {
     inviteButton.style.display = "none"
 
     createRoomButton.style.display = "flex"
+    joinOtherRoomButton.style.display = "flex"
 }
 
 
@@ -61,30 +64,45 @@ stopVideo.addEventListener("click", () => {
     }
 });
 
+let enteredRoom;
+let inviteLink;
+
 inviteButton.addEventListener("click", (e) => {
     prompt(
         "Copy this link and send it to people you want to meet with",
-        window.location.href
+        `${window.location.href}?room=${inviteLink}`
     );
 });
 
-let enteredRoom;
 
 async function createRoom() {
     setInRoom()
     emitCreateRoom()
-    await openLocalTrack()
+    await openLocalStream()
 }
 
 createRoomButton.addEventListener("click", async () => await createRoom())
 
 async function leaveRoom() {
     setWithoutRoom()
-    await closeConnectionsAndLocalStream()
     emitLeaveRoom()
+    await closeConnectionsAndLocalStream()
 }
 
 leaveRoomButton.addEventListener("click", async () => await leaveRoom())
+
+
+async function joinRoom(room) {
+    emitJoinPrivateRoom(room)
+}
+
+
+joinOtherRoomButton.addEventListener("click", async () => {
+    const room = prompt("Enter room ID you want to join: ")
+    if (room) {
+        await joinRoom(room)
+    }
+})
 
 setWithoutRoom()
 
@@ -94,15 +112,6 @@ const peerConnections = new Map() // map sid: RTCPeerConnection
 
 let localStream;
 const streams = new Set()
-let users // map sid: username
-
-
-function getSIDbyUsername(value) {
-    for (let [k, v] of users.entries()) {
-        if (v === value)
-            return k;
-    }
-}
 
 const sio = io();
 
@@ -114,51 +123,82 @@ function emitCreateRoom() {
 function emitLeaveRoom() {
     sio.emit("leave_private_room", {room: enteredRoom})
     enteredRoom = null
+    inviteLink = null
 }
 
 sio.on('private_room_created', data => {
     const {room_name, invite_link} = data
     enteredRoom = room_name
+    inviteLink = invite_link
 })
 
-const currentUser = prompt("Please enter your name");
 
-if (!currentUser) {
-    throw "User can't be empty"
-}
 sio.on('connect', async () => {
-    // handle local user media
-    // await start()
-    sio.emit("join_global_room", {username: currentUser})
+    console.log("connect")
+    sio.emit("get_users")
 });
+
+function promptUser(usernames, message = "Please enter your name") {
+    const username = prompt(message);
+    if (usernames.has(username)) {
+        return promptUser(usernames, `Username: ${username} is already taken. Please take something else.`)
+    } else {
+        if (!username) {
+            return promptUser(usernames, "It is not possible to use blank username ...")
+        }
+        return username
+    }
+}
+
+sio.on("users_returned", async data => {
+    const usernames = new Set(data.users.map(user => user.username))
+    const currentUser = promptUser(usernames)
+    sio.emit("join_global_room", {username: currentUser})
+    await joinRoomIfProvidedByLink()
+})
+
+async function joinRoomIfProvidedByLink() {
+    if (location.href.includes('?')) {
+        const [url, roomToJoin] = location.href.split('?room=')
+        history.pushState({}, null, url);
+        await joinRoom(roomToJoin)
+    }
+}
+
+sio.on('join_private_room_failed', async data => {
+    alert("Failed to join room because of err: " + data.error)
+})
 
 sio.on('user_joined_global_room', async data => {
     console.log("user connected to a global room " + data.username)
-    users = new Map()
-    data.users.map(user => users.set(user.sid, user.username))
-
-
-    if (users.size === 1) {
-        console.log("first user is ready")
-    } else {
-        if (currentUser === data.username) {
-            console.log(`${currentUser} has joined the room. Calling other users in global room`)
-            await callAllUsers()
-        }
-    }
 })
 
 sio.on('user_left_global_room', data => {
-    const {sid, username} = data
     console.log("user disconnected " + data.username)
-    users = new Map()
-    data.users.map(user => users.set(user.sid, user.username))
+})
 
-    if (username !== currentUser) {
-        disconnectFromUser(sid)
-    } else {
-        throw "user_left_global_room event shouldn't be triggered for user who has left the room"
-    }
+sio.on('user_joined_private_room', data => {
+    console.log('user_joined_private_room')
+})
+
+sio.on('user_left_private_room', data => {
+    disconnectFromUser(data.sid)
+})
+
+
+sio.on('you_joined_private_room', async data => {
+    enteredRoom = data.room
+
+    await openLocalStream()
+    setInRoom()
+
+    console.log("you_joined_private_room")
+    const {participants_sids} = data;
+    console.log(participants_sids)
+    participants_sids.map(async sid => {
+        console.log("call sid: " + sid)
+        await makeCall(sid)
+    })
 })
 
 function disconnectFromUser(remoteUserSID) {
@@ -197,7 +237,11 @@ sio.on("disconnected_from_private_room_admin", async () => {
     await leaveRoom()
 })
 
-const openLocalTrack = async () => {
+function emitJoinPrivateRoom(room) {
+    sio.emit("join_private_room", {room})
+}
+
+const openLocalStream = async () => {
     videoLoader.style.display = "flex"
 
     const localVideo = document.createElement("video");
@@ -210,6 +254,7 @@ const openLocalTrack = async () => {
 
 const addVideoStream = (video, stream) => {
     if (streams.has(stream.id)) {
+        console.log("duplicated stream has been ignored")
         return
     }
     streams.add(stream.id)
@@ -219,7 +264,6 @@ const addVideoStream = (video, stream) => {
         videoGrid.append(video);
     });
 };
-
 
 function closeLocalStream() {
     localStream.getTracks().forEach(track => track.stop());
@@ -255,12 +299,6 @@ function closeAllPeerConnections() {
         })
 }
 
-async function callAllUsers() {
-    [...users.values()]
-        .filter(username => username !== currentUser)
-        .map(async username => await makeCall(username))
-}
-
 async function createOffer(peerConn, remoteUserSID) {
     const offer = await peerConn.createOffer();
     sio.emit("offer_call", {offer, to: remoteUserSID})
@@ -268,8 +306,7 @@ async function createOffer(peerConn, remoteUserSID) {
 }
 
 
-async function makeCall(remoteUsername) {
-    const remoteUserSID = getSIDbyUsername(remoteUsername)
+async function makeCall(remoteUserSID) {
     const peerConn = await createPeerConnection(remoteUserSID);
     await createOffer(peerConn, remoteUserSID)
     return peerConn
@@ -289,8 +326,6 @@ async function handleOffer(offer, from) {
 async function handleAnswer(answer, from) {
     const conn = peerConnections.get(from)
     if (!conn) {
-        console.log(peerConnections)
-        console.log(users)
         throw "Trying to create answer for unknown user"
     }
 
@@ -300,8 +335,6 @@ async function handleAnswer(answer, from) {
 async function handleCandidate(candidate, from) {
     const conn = peerConnections.get(from)
     if (!conn) {
-        console.log(peerConnections)
-        console.log(users)
         throw "Trying to add ice candidate from unknown user"
     }
 

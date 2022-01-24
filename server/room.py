@@ -16,10 +16,10 @@ class Rooms:
         self.rooms: t.Dict[str, _Room] = {}
 
     def get(self, name) -> _Room:
-        room = self.rooms.get(name)
-        if not room:
-            raise RuntimeError("such room doesn't exist")
-        return room
+        return self.rooms.get(name)
+
+    def has(self, name) -> bool:
+        return name in self.rooms.keys()
 
     def add_user_to_room(self, room_name, user_sid):
         room = self.rooms.get(room_name)
