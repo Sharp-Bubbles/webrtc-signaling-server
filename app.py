@@ -62,6 +62,13 @@ async def join_private_room(sid, data):
 
 async def left_room(room_name, sid):
     room = rooms.get(room_name)
+
+    # --––––––––
+    # todo: fix this sheet
+    if not room:
+        return
+    # --––––––––
+
     if room.admin_sid == sid:
         removed_room = rooms.pop(room_name)
         participant_sids = removed_room.users_sids

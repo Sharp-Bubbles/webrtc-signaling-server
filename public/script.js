@@ -96,11 +96,27 @@ async function joinRoom(room) {
     emitJoinPrivateRoom(room)
 }
 
+function validateInviteLink(link) {
+    const parts = link.split("?")
+    if (parts.length !== 2) {
+        return false
+    }
+    if (!parts[1].includes("room=")) {
+        return false
+    }
+    if (parts[0].trimRight() !== window.location.href) {
+        return false
+    }
+    return true
 
-joinOtherRoomButton.addEventListener("click", async () => {
-    const room = prompt("Enter room ID you want to join: ")
-    if (room) {
-        await joinRoom(room)
+}
+
+joinOtherRoomButton.addEventListener("click", () => {
+    const link = prompt("Enter invite link: ")
+    if (link) {
+        if (validateInviteLink(link)) {
+            window.location.assign(link);
+        }
     }
 })
 
@@ -151,15 +167,25 @@ function promptUser(usernames, message = "Please enter your name") {
 }
 
 sio.on("users_returned", async data => {
-    const usernames = new Set(data.users.map(user => user.username))
-    const currentUser = promptUser(usernames)
+    let currentUser;
+    if (sessionStorage.getItem("currentUser")) {
+        currentUser = sessionStorage.getItem("currentUser")
+        window.currentUser = currentUser
+    } else {
+        const usernames = new Set(data.users.map(user => user.username))
+        currentUser = promptUser(usernames)
+        sessionStorage.setItem("currentUser", currentUser)
+    }
+    document.querySelector('.header__title').innerHTML = `Video App from Sharp-Bubbles says: Hello to ${currentUser}! :) `
+
+
     sio.emit("join_global_room", {username: currentUser})
-    await joinRoomIfProvidedByLink()
+    await joinRoomIfProvidedByLink(window.location.href)
 })
 
-async function joinRoomIfProvidedByLink() {
-    if (location.href.includes('?')) {
-        const [url, roomToJoin] = location.href.split('?room=')
+async function joinRoomIfProvidedByLink(link) {
+    if (link.includes('?')) {
+        const [url, roomToJoin] = link.split('?room=')
         history.pushState({}, null, url);
         await joinRoom(roomToJoin)
     }
