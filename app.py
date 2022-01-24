@@ -22,50 +22,17 @@ async def join_global_room(sid, data):
 
 
 @sio.event
-async def leave_global_room(sid):
-    sio.leave_room(sid, GLOBAL_ROOM)
-    connected_users.pop(sid)
-    await sio.emit("user_left_global_room", {"sid": sid, "users": [
-        {"sid": sid, "username": username} for sid, username in connected_users.items()
-    ]}, room=GLOBAL_ROOM, skip_sid=sid)
-
-
-@sio.event
 async def connect(sid, environ):
     print(sid, "connected")
 
 
 @sio.event
-async def add_user(sid, data):
-    username = data["username"]
-    connected_users[sid] = username
-    await sio.emit(
-        "user_added",
-        {
-            "users": [
-                {"sid": sid, "username": username} for sid, username in connected_users.items()
-            ],
-            "username": username,
-            "sid": sid,
-        },
-        to=sid,
-    )
-
-
-@sio.event
 async def disconnect(sid):
-    print(sid, "disconnected")
+    sio.leave_room(sid, GLOBAL_ROOM)
     username = connected_users.pop(sid)
-    await sio.emit(
-        "user_disconnected",
-        {
-            "username": username,
-            "sid": sid,
-            "users": [
-                {"sid": sid, "username": username} for sid, username in connected_users.items()
-            ],
-        },
-    )
+    await sio.emit("user_left_global_room", {"sid": sid, "username": username, "users": [
+        {"sid": sid, "username": username} for sid, username in connected_users.items()
+    ]}, room=GLOBAL_ROOM, skip_sid=sid)
 
 
 @sio.event

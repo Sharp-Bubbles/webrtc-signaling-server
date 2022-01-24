@@ -50,6 +50,7 @@ inviteButton.addEventListener("click", (e) => {
 
 const peerConnections = new Map() // map sid: RTCPeerConnection
 
+
 let localStream;
 const streams = new Set()
 let users // map sid: username
@@ -100,21 +101,23 @@ sio.on('user_left_global_room', data => {
     console.log("user disconnected " + data.username)
     users = new Map()
     data.users.map(user => users.set(user.sid, user.username))
-    console.log(users)
 
     if (username !== currentUser) {
-        peerConnections.get(sid).close()
-        peerConnections.delete(sid)
+        disconnectFromUser(sid)
     } else {
         throw "user_left_global_room event shouldn't be triggered for user who has left the room"
     }
 })
 
+function disconnectFromUser(remoteUserSID) {
+    peerConnections.get(remoteUserSID).close()
+    peerConnections.delete(remoteUserSID)
+    document.getElementById(`user__${remoteUserSID}`).remove()
+}
+
 sio.on('disconnect', () => {
     console.log('disconnected');
-    // maybe conn should close only from one side
     closeAllPeerConnections()
-    sio.emit("left_global_room")
 });
 
 sio.on("call_offered", data => {
@@ -168,9 +171,8 @@ function createPeerConnection(remoteUserSID) {
     };
     peerConn.ontrack = e => {
         const remoteVideo = document.createElement("video");
+        remoteVideo.setAttribute("id", `user__${remoteUserSID}`)
         addVideoStream(remoteVideo, e.streams[0])
-        // todo: remote video element as well
-
     }
     localStream.getTracks().forEach(track => peerConn.addTrack(track, localStream));
     peerConnections.set(remoteUserSID, peerConn)
@@ -178,10 +180,11 @@ function createPeerConnection(remoteUserSID) {
 }
 
 function closeAllPeerConnections() {
-    for (let [remoteUserSID, conn] of peerConnections) {
-        conn.close()
-        console.log("Close connection with " + remoteUserSID);
-    }
+    [...peerConnections.keys()].map(
+        remoteUserSID => {
+            disconnectFromUser(remoteUserSID)
+            console.log("Close connection with " + remoteUserSID);
+        })
 }
 
 async function callAllUsers() {
