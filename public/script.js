@@ -303,7 +303,19 @@ async function closeConnectionsAndLocalStream() {
 }
 
 function createPeerConnection(remoteUserSID) {
-    const peerConn = new RTCPeerConnection();
+    const peerConn = new RTCPeerConnection({
+        iceServers: [
+            {
+                urls: 'stun:stun1.l.google.com:19302'
+            },
+            {
+                urls: 'stun:stun3.l.google.com:19302'
+            },
+            {
+                urls: 'stun:stun4.l.google.com:19302'
+            }
+        ]
+    });
     peerConn.onicecandidate = e => {
         sio.emit("ice_candidate", {candidate: e.candidate, to: remoteUserSID})
     };
