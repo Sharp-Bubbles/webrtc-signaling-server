@@ -1,30 +1,29 @@
-(() => {
-    document.querySelector(".main__left").style.display = "flex";
-    document.querySelector(".main__left").style.flex = "1";
-    document.querySelector(".main__right").style.display = "none";
-})();
-
 const videoGrid = document.getElementById("video-grid");
 const createRoomButton = document.querySelector("#createRoomButton");
 const leaveRoomButton = document.querySelector("#leaveRoomButton");
 const joinOtherRoomButton = document.querySelector("#joinOtherRoom");
 const inviteButton = document.querySelector("#inviteButton");
+const showChatButton = document.querySelector("#showChat");
 const muteButton = document.querySelector("#muteButton");
 const stopVideo = document.querySelector("#stopVideo");
 const videoLoader = document.querySelector(".loader")
 
+
+let isMuted = false;
+
 muteButton.addEventListener("click", () => {
-    const enabled = localStream.getAudioTracks()[0].enabled;
-    if (enabled) {
+    if (!isMuted) {
         localStream.getAudioTracks()[0].enabled = false;
         html = `<i class="fas fa-microphone-slash"></i>`;
-        muteButton.classList.toggle("background__red");
+        muteButton.classList.add("background__red");
         muteButton.innerHTML = html;
+        isMuted = true
     } else {
         localStream.getAudioTracks()[0].enabled = true;
         html = `<i class="fas fa-microphone"></i>`;
-        muteButton.classList.toggle("background__red");
+        muteButton.classList.remove("background__red");
         muteButton.innerHTML = html;
+        isMuted = false
     }
 });
 
@@ -33,9 +32,18 @@ function setInRoom() {
     stopVideo.style.display = "flex"
     leaveRoomButton.style.display = "flex"
     inviteButton.style.display = "flex"
+    showChatButton.style.display = "flex"
 
     joinOtherRoomButton.style.display = "none"
     createRoomButton.style.display = "none"
+
+    showChat()
+}
+
+function cleanupMessages() {
+    document.querySelectorAll(".message").forEach(
+        (value) => value.remove()
+    )
 }
 
 function setWithoutRoom() {
@@ -43,24 +51,66 @@ function setWithoutRoom() {
     stopVideo.style.display = "none"
     leaveRoomButton.style.display = "none"
     inviteButton.style.display = "none"
+    showChatButton.style.display = "none"
+
 
     createRoomButton.style.display = "flex"
     joinOtherRoomButton.style.display = "flex"
+
+    hideChat()
+    cleanupMessages()
 }
 
 
+let chatActive = false;
+let enteredRoom;
+
+function hideChat() {
+    document.querySelector(".main__left").style.display = "flex";
+    document.querySelector(".main__left").style.flex = "1";
+    document.querySelector(".main__right").style.display = "none";
+
+    chatActive = false
+
+    html = `<i class="fas fa-comment-slash"></i>`;
+    showChatButton.classList.add("background__red");
+    showChatButton.innerHTML = html;
+}
+
+function showChat() {
+    document.querySelector(".main__right").style.display = "flex";
+    chatActive = true
+
+    html = `<i class="fas fa-comment"></i>`;
+    showChatButton.classList.remove("background__red");
+    showChatButton.innerHTML = html;
+}
+
+
+showChatButton.addEventListener("click", () => {
+    if (chatActive) {
+        hideChat()
+    } else {
+        showChat()
+    }
+});
+
+
+let videoEnabled = true;
+
 stopVideo.addEventListener("click", () => {
-    const enabled = localStream.getVideoTracks()[0].enabled;
-    if (enabled) {
+    if (videoEnabled) {
         localStream.getVideoTracks()[0].enabled = false;
         html = `<i class="fas fa-video-slash"></i>`;
-        stopVideo.classList.toggle("background__red");
+        stopVideo.classList.add("background__red");
         stopVideo.innerHTML = html;
+        videoEnabled = false
     } else {
         localStream.getVideoTracks()[0].enabled = true;
         html = `<i class="fas fa-video"></i>`;
-        stopVideo.classList.toggle("background__red");
+        stopVideo.classList.remove("background__red");
         stopVideo.innerHTML = html;
+        videoEnabled = true
     }
 });
 
@@ -212,12 +262,9 @@ sio.on('you_joined_private_room', async data => {
 
     await openLocalStream()
     setInRoom()
-
     console.log("you_joined_private_room")
     const {participants_sids} = data;
-    console.log(participants_sids)
     participants_sids.map(async sid => {
-        console.log("call sid: " + sid)
         await makeCall(sid)
     })
 })
@@ -370,6 +417,36 @@ async function handleCandidate(candidate, from) {
     if (!conn) {
         throw "Trying to add ice candidate from unknown user"
     }
-
     await conn.addIceCandidate(candidate);
 }
+
+let text = document.querySelector("#chat_message");
+let sendButton = document.getElementById("send");
+let messages = document.querySelector(".messages");
+
+
+function sendMessage() {
+    if (text.value.length !== 0) {
+        console.log(text.value)
+        sio.emit("send_private_room_message", {message: text.value, room: enteredRoom});
+        text.value = "";
+    }
+}
+
+sendButton.addEventListener("click", (e) => sendMessage());
+
+
+sio.on("got_private_room_message", data => {
+    const {message, username} = data
+    messages.innerHTML =
+        messages.innerHTML +
+        `<div class="message">
+        <b><i class="far fa-user-circle"></i> <span> ${
+            username === sessionStorage.getItem("currentUser") ? "me" : username
+        }</span> </b>
+        <span>${message}</span>
+    </div>`;
+});
+
+
+text.addEventListener("keydown", (e) => e.key === "Enter" ? sendMessage() : null);

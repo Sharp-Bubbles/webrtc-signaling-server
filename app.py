@@ -11,6 +11,17 @@ rooms = Rooms()
 
 
 @sio.event
+async def send_private_room_message(sid, data):
+    room = data["room"]
+    message = data["message"]
+
+    await sio.emit(
+        "got_private_room_message",
+        {"message": message, "username": connected_users.get(sid, "")}, room=room
+    )
+
+
+@sio.event
 async def join_global_room(sid, data):
     connected_users[sid] = data["username"]
     await sio.emit(
