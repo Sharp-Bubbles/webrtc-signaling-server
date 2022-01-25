@@ -43,7 +43,7 @@ async def create_private_room(sid):
     rooms.create(room_name, sid)
     sio.enter_room(sid, room_name)
 
-    await sio.emit("private_room_created", {"room_name": room_name, "invite_link": room_name}, to=sid)
+    await sio.emit("private_room_created", {"room_name": room_name}, to=sid)
 
 
 @sio.event

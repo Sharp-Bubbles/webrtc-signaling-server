@@ -64,13 +64,10 @@ stopVideo.addEventListener("click", () => {
     }
 });
 
-let enteredRoom;
-let inviteLink;
-
 inviteButton.addEventListener("click", (e) => {
     prompt(
         "Copy this link and send it to people you want to meet with",
-        `${window.location.href}?room=${inviteLink}`
+        `${window.location.href}?room=${enteredRoom}`
     );
 });
 
@@ -139,13 +136,11 @@ function emitCreateRoom() {
 function emitLeaveRoom() {
     sio.emit("leave_private_room", {room: enteredRoom})
     enteredRoom = null
-    inviteLink = null
 }
 
 sio.on('private_room_created', data => {
-    const {room_name, invite_link} = data
+    const {room_name} = data
     enteredRoom = room_name
-    inviteLink = invite_link
 })
 
 
