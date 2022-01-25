@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  signaling-server:
+    build: .
+    ports:
+      - "443:443"
+    command: 'bash -c "uvicorn app:app --host 0.0.0.0 --port 443 --ssl-keyfile=/tmp/cert/private.key --ssl-certfile=/tmp/cert/pem.crt"'
+    volumes:
+      - ./cert:/tmp/cert
